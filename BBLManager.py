@@ -3,8 +3,21 @@
 import struct
 import cPickle
 import time
+from functools import wraps
 
+# so @profile will throw error when run without line_profiler.
+if 'profile' not in  dir(__builtins__):
+	profile = lambda func: func
 
+def time_profile(orig_func):
+    @wraps(orig_func) # wraps make wrap_func.__name__ = func
+    def wrap_func(*args, **kwargs):
+        time_start = time.time()
+        result = orig_func(*args, **kwargs)
+        time_end = time.time()
+        print "Running %s(): %0.4f seconds" % (orig_func.func_name, time_end - time_start)
+        return result
+    return wrap_func
 
 class BasicBlock(object):
 
@@ -14,7 +27,9 @@ class BasicBlock(object):
 		self.size = size
 		self.ins_count = ins_count
 
-		self.loops = []
+		self.loops = set()
+
+		self.visited = False # for DFS.
 
 		# instructions sequence. (addr, disassemble)
 		self.ins = []
@@ -22,7 +37,7 @@ class BasicBlock(object):
 		self.exec_count = 0
 
 		# next, prev block address.  (addr, call_count)
-		# 这里用地址，不用对象引用。用对象引用cPickle dump时会发生递归错误
+		# use address instead of reference, or cPickle.dump throw a recursion error.
 		self.nexts = {}
 		self.prevs = {}
 
@@ -32,10 +47,15 @@ class BasicBlock(object):
 
 
 	def add_prev(self, addr):
-		if addr not in self.prevs:
-			self.prevs[addr] = 1
-		else:
+		#if addr not in self.prevs:
+		#	self.prevs[addr] = 1
+		#else:
+		#	self.prevs[addr] += 1
+		try:
 			self.prevs[addr] += 1
+		except KeyError:
+			self.prevs[addr] = 1
+
 
 	def add_next(self, addr):
 		if addr not in self.nexts:
@@ -61,9 +81,7 @@ class BasicBlock(object):
 		return ''.join('%#x\t%s\n' % (addr, dis) for addr, dis in self.ins)
 
 	def add_loop(self, loop):
-		if loop not in self.loops:
-			self.loops.append(loop)
-		# nodes shoud never modify loop count !!!	
+		self.loops.add(loop)
 
 	def loop_count(self):
 		return len(self.loops)
@@ -84,26 +102,32 @@ class BasicBlock(object):
 	def __repr__(self):
 		return '<Block(%#x - %#x) INS(%d) PREV(%d) NEXT(%d) EXEC(%d) LOOP(%d)\n>' % (
 			self.start_addr, self.end_addr, self.ins_count,
-			 self.prev_count(),  self.next_count(), self.exec_count, self.loop_count() )
+			 self.prev_count(),  self.next_count(), self.exec_count, self.loop_count())
 
 
 
 class BlockLoop(object):
 
 	def __init__(self, addr_seq):
-		self.addr_seq = addr_seq
+		self.addr_seq = tuple(addr_seq)
 		self.count = 1
 
+
 	def __cmp__(self, obj):
-
-		if obj is self: return 0
-
-		if type(obj) is list:
-			return cmp(self.addr_seq, obj)
 		if isinstance(obj, self.__class__):
 			return cmp(self.addr_seq, obj.addr_seq)
+		
+		if obj is self: return 0
+		
+		if type(obj) is list or type(obj) is tuple:
+			return cmp(self.addr_seq, obj)
+		
 		return cmp(self, obj)
-	
+
+	def __hash__(self):
+		return hash(self.addr_seq)
+
+
 	def list_nodes(self, bm):
 		for addr in self.addr_seq:
 			yield bm.blocks[addr]
@@ -118,19 +142,33 @@ class BlockLoop(object):
 	def __str__(self):
 		return ','.join(hex(i) for i in self.addr_seq)
 
-
-
-
-
 class BBLManager(object):
 
 	def __init__(self):
 		self.blocks = {}  # (addr, block)
-		self.loops = []
-		self.head_block = None
+		self.loops = set()
+		self.head_block = None  # first block in parse phrase
+		self.head_addr  = None  # first address in execute phrase
+
+	
+	'''
+	return True if a new loop is appended.
+	'''
+	def _add_loop(self, loop):
+		if loop in self.loops:
+			return False
+		else:
+			self.loops.add(loop) # this will call loop.__hash__()
+			return True
 
 
+	'''
+	load block address range and assembly.
+	'''
+	@time_profile
 	def load_bbl_info(self, filename):
+		print '[+] Loading info from %s' % filename
+
 		blocks = open(filename, 'rb').read().split('####BBL\n')[1:] # skip first ''
 		for buf in blocks:
 			lines = buf.splitlines()
@@ -142,18 +180,21 @@ class BBLManager(object):
 
 			b = BasicBlock(start_addr, end_addr, size, ins_count)
 
+			if not self.head_block:
+				self.head_block = b
+
 			# parse ins
 			for line in lines[1:]:
 				addr, dis = line.split('\t')
 				addr = int(addr,16)
 				b.ins.append((addr, dis))
 
-			if self.head_block == None: self.head_block = b
 
 			if start_addr not in self.blocks:	
 				self.blocks[start_addr] = b
 			else:
-				# shoud be same block!!
+				# TODO: handle block at same address.
+				# of course this will never happen when we use INS trace.
 				if self.blocks[start_addr].size != b.size:
 					print '='*40 + 'Block collision!'
 					print self.blocks[start_addr]
@@ -166,6 +207,7 @@ class BBLManager(object):
 	'''
 	buffered io. faster. 
 	'''
+	@profile
 	def _buffer_process_addr(self, filename,start_addr = None, end_addr = None, x64=False):
 		# get file size.
 		f = open(filename, 'rb')
@@ -193,84 +235,124 @@ class BBLManager(object):
 			if len(addrs) == 0: break
 			assert len(addrs) % ADDR_SIZE == 0
 
-			block_addr_seq = struct.unpack(ADDR_FMT*(len(addrs)/ADDR_SIZE), addrs)
+			addrs = struct.unpack(ADDR_FMT*(len(addrs)/ADDR_SIZE), addrs)
+
+			# start at start_addr.
+			if start_addr and not started:
+				if start_addr not in addrs:
+					continue
+				else:
+					addrs = addrs[ addrs.index(start_addr): ]
+					started = True
+
+			# end at end_addr
+			if end_addr:
+				if end_addr in addrs:
+					addrs = addrs[ : addrs.index(end_addr)]
+					ended = True
 
 			# process blocks
-			for addr in block_addr_seq:
-
-				# start at start_addr.
-				if start_addr and not started:
-					if start_addr != addr:
-						continue
-					else:
-						started = True
-
-				# end at end_addr.
-				if end_addr and addr == end_addr:
-					break
-
-				yield addr
+			#for addr in addrs:
+			#	yield addr
+			# this works faster!
+			yield addrs
 
 			if read_size % (BUFSIZE) == 0:
 				print '\r%0.2f %% processed\t%s' % (read_size*100.0/filesize, time.asctime())
 
+			if ended:
+				break
+
 		f.close()
 
 
-	'''
-	return True if a new loop is appended.
-	'''
-	def _add_loop(self, loop):
-		if loop in self.loops:
-			self.loops[self.loops.index(loop)].count += 1
-			return False
-		else:
-			self.loops.append(loop)
-			return True  
 
 
 	'''
+	Construct BBL graph. head_block is set here.
+
 	filename: BBL trace file.
 	start_addr: start processing at this address. (start_addr will be processed)
 	end_addr: stop processing at this address. (end_addr will *not* be processed)
 	x64: True for x64 , False for x86
 	'''
+	@time_profile
+	@profile
 	def load_bbl_trace(self, filename, start_addr = None, end_addr = None, x64=False):
+		print '[+] Loading trace from %s' % filename
 
 		prev_block = None
 
 		addr_seq = []
+		addr_set = set()
+
 		loops   = []
 
 
-		for addr in self._buffer_process_addr(filename, start_addr, end_addr, x64):
+		for addrs in self._buffer_process_addr(filename, start_addr, end_addr, x64):
+			for addr in addrs:
+				if not self.head_addr:
+					self.head_addr = addr
 
-			cur_block = self.blocks[addr]
-			cur_block.exec_count += 1
-			if prev_block:				
-				cur_block.add_prev(prev_block.start_addr)
-				prev_block.add_next(cur_block.start_addr)
-			prev_block = cur_block
+				cur_block = self.blocks[addr]
+				cur_block.exec_count += 1
+				if prev_block:				
+					cur_block.add_prev(prev_block.start_addr)
+					prev_block.add_next(cur_block.start_addr)
+				prev_block = cur_block
 
-			#''' 
-			# tooooooooooo slow !!!!
-			if addr  in  addr_seq:
-				# loop found.
-				loop_start = addr_seq.index(addr)
-				loop = BlockLoop(addr_seq[loop_start: ])
-				addr_seq =  addr_seq[ :loop_start]
+				if addr in addr_set: # set is much faaaaaster than list.
+					# loop found.
+					loop_start = addr_seq.index(addr)
+					loop = BlockLoop(addr_seq[loop_start: ])
+					
+					#loop = tuple(addr_seq[loop_start: ])
+					addr_seq =  addr_seq[ :loop_start]
+					for i in loop.addr_seq:		
+						addr_set.remove(i)			
 
-				if(self._add_loop(loop)):
-					for node in loop.list_nodes(self):
-						node.add_loop(loop)
+					if(self._add_loop(loop)):
+						for node in loop.list_nodes(self):
+							node.add_loop(loop)
 
-			addr_seq.append(addr)
+				addr_seq.append(addr)
+				addr_set.add(addr)
 			#'''
 
 		# clear dead block whose exec_count is 0.
 		for addr in self.blocks.keys():
 			if self.blocks[addr].exec_count == 0:
 				self.blocks.pop(addr)
+
+	# ==============================================================================
+
+	def _dfs_find_circle(self, addr, path = []):
+		
+		
+		if addr in path:
+			# circle found.
+			# yield path[path.index(addr):]
+			circle = path[path.index(addr):]
+			self.loops.append(circle)
+			for addr in circle:
+				self.blocks[addr].add_loop(circle)
+			return 
+
+		else:
+			path.append(addr)
+			for next_addr in self.blocks[addr].nexts:
+				# only for py3
+				# yield from self._dfs_find_circle(self, next_addr, path)
+				self._dfs_find_circle(next_addr, path)
+			path.pop()
+			return
+
+	# result make no sense !!!! 
+	# use loops generated from trace.
+
+	def find_all_circle(self):
+		self.loops = []
+		self._dfs_find_circle(self.head_addr)
 
 	# ==============================================================================
 
@@ -416,15 +498,23 @@ def load_bm(dumpfile):
 def main():
 	#load_bm(r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bm_2.12.3.dump')
 	#load_bm(r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bm_3.09_pack.dump')	
-	#load_bm(r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\base64_1.81.dump')
+	
+	#load_bm(r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\base64_3.09.dump')
+
 	#bm.display_bbl_graph()
 	#bm.display_bbl_graph_ida()
 	#bm.sorted_blocks('exec_count')
 
-	dump_bm(r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\BBL.info',
-		r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\BBL.trace',
-		r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bm_3.09_pack.dump')
+	infofile = r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\INS.info'
+	tracefile = r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\INS.trace'
+	dumpfile = r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\3.09_pack.dump'
+	dump_bm(infofile, tracefile ,dumpfile)
 
+	#print bm.sorted_blocks('loop_count')
+
+	#load_bm(dumpfile)
+	#bm.find_all_circle()
+	#bm.display_bbl_graph_ida()
 
 	#cPickle.dump(bm, open('3.09_pack_bbl.dump','wb'))	
 
