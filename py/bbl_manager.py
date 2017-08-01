@@ -6,8 +6,10 @@ import time
 import os
 import sys
 
-
 from functools import wraps
+
+# my code
+import symexec 
 
 # so @profile won't throw error when running without line_profiler.
 if 'profile' not in  dir(__builtins__):
@@ -186,6 +188,15 @@ class BasicBlock(object):
         self.sub_blocks += block.sub_blocks
         block.sub_blocks = []
 
+    def to_c(self):        
+        import symexec
+        sb = symexec.symexec(self.bytes)
+        c_str = symexec.state_to_c(sb)
+        return c_str
+
+
+
+
 
 
 class BlockLoop(object):
@@ -229,6 +240,9 @@ class BBLManager(object):
         self.head_block = None  # first block in parse phrase
         self.head_addr  = None  # first address in execute phrase
 
+        #=======
+        self.handlers = {}    # { dispatcher_addr : [handler_addr, ...]}  
+
     def _add_loop(self, loop):
         # return True if a new loop is appended.        
         if loop in self.loops:
@@ -236,8 +250,6 @@ class BBLManager(object):
         else:
             self.loops.add(loop) # this will call loop.__hash__()
             return True
-
-
 
     @time_profile
     def load_ins_info(self, filename):
@@ -682,9 +694,31 @@ class BBLManager(object):
         dispatchers = filter(lambda b: b.loop_count > 5 and b.next_count*2 > b.loop_count,
             self.sorted_blocks('loop_count'))
 
-
-
+        print '[+] %d dispatcher(s) found.' % len(dispatchers) 
+        for block in dispatchers:
+            self.handlers[block.addr] = block.nexts
         return dispatchers
+
+    def dump_handlers(self):
+
+        for dispatcher_addr in self.handlers:
+            block = self.blocks[dispatcher_addr]
+            print 'Dispatcher:'
+            print block.ins_str
+
+            handler_addrs = self.handlers[dispatcher_addr]
+            print '[+] %d Handler(s):' % len(handler_addrs)
+            for addr in handler_addrs:                
+                handler = self.blocks[addr]
+                print '#'*80
+                print 'Handler:'
+                # print bm.blocks[addr].bytes.encode('hex')
+                print handler.ins_str 
+                print 'C repr:'
+                print handler.to_c()      
+
+        print '='*20
+
 
 
 def dump_bm(infofile, tracefile, dumpfile, x64=False):
@@ -703,7 +737,6 @@ def load_bm(dumpfile):
 
 
 def run_pin_and_dump(exe_path):
-    
 
     cmd = r'..\..\..\pin.exe  -t obj-ia32\MyPinTool.dll -logins -- %s' % exe_path
     os.system(cmd)
@@ -736,22 +769,13 @@ if __name__ == '__main__':
     #     bm.draw_block_loop_ida(dispatcher)
     global bm
     bm = BBLManager()
-    bm.load_ins_info('./bin.ins')
-    bm.load_trace('./bin.trace')    
+    bm.load_ins_info('../bin.ins')
+    bm.load_trace('../bin.trace')    
     bm.consolidate_blocks()
     cPickle.dump(bm, open('test.dump','wb')) 
 
-    dispatchers = bm.detect_dispatchers() 
+    bm.detect_dispatchers() 
+    bm.dump_handlers()
 
-    print '[+] %d dispatcher(s) found.' % len(dispatchers) 
-    for block in dispatchers:
-        print 'Dispatcher:'
-        print block.ins_str
 
-        print '[+] %d Handler(s):' % block.next_count
-        for addr in block.nexts:
-            print 'Handler:'
-            print bm.blocks[addr].bytes.encode('hex')
-            print bm.blocks[addr].ins_str        
-    print '='*20
     
