@@ -194,11 +194,6 @@ class BasicBlock(object):
         c_str = symexec.state_to_c(sb)
         return c_str
 
-
-
-
-
-
 class BlockLoop(object):
 
     def __init__(self, addr_seq):
@@ -770,9 +765,11 @@ if __name__ == '__main__':
     global bm
     bm = BBLManager()
     bm.load_ins_info('../bin.ins')
-    bm.load_trace('../bin.trace')    
+    bm.load_trace('../bin.trace') 
+    # bm.load_trace('../bin.block')      
     bm.consolidate_blocks()
-    cPickle.dump(bm, open('test.dump','wb')) 
+    # cPickle.dump(bm, open('test.dump','wb')) 
+    # bm.display_bbl_graph()
 
     bm.detect_dispatchers() 
     bm.dump_handlers()

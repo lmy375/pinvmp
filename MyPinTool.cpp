@@ -31,11 +31,13 @@ INT32 Usage()
 
 FILE * tracefile;
 FILE * insfile;
+FILE * blockfile;
 
 void InitFiles()
 {
 	tracefile = fopen("bin.trace", "wb");
 	insfile = fopen("bin.ins", "wb");
+	blockfile = fopen("bin.block", "wb");
 	ASSERT(tracefile && insfile, "open file failed");
 }
 
@@ -63,6 +65,7 @@ void CloseFiles()
 {
 	fclose(tracefile);
 	fclose(insfile);
+	fclose(blockfile);
 }
 
 
@@ -109,6 +112,23 @@ VOID Instruction(INS ins, VOID *v)
 }
 
 
+VOID BblTrace(ADDRINT addr)
+{
+	fwrite(&addr, sizeof(ADDRINT), 1, blockfile);
+}
+
+VOID Trace(TRACE trace, VOID *v)
+{
+	for (BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl = BBL_Next(bbl))
+	{
+		ADDRINT addr = BBL_Address(bbl);
+		if (addr >= filter_ip_low && addr <= filter_ip_high) {
+			BBL_InsertCall(bbl, IPOINT_BEFORE, (AFUNPTR)BblTrace,
+				IARG_UINT32, addr,
+				IARG_END);
+		}
+	}
+}
 
 VOID ThreadStart(THREADID threadIndex, CONTEXT *ctxt, INT32 flags, VOID *v)
 {
@@ -149,6 +169,7 @@ int main(int argc, char *argv[])
 
 	IMG_AddInstrumentFunction(ImageLoad, 0);
 	INS_AddInstrumentFunction(Instruction, 0);
+	TRACE_AddInstrumentFunction(Trace, 0);
     PIN_AddThreadStartFunction(ThreadStart, 0);
     PIN_AddFiniFunction(Fini, 0);
 
