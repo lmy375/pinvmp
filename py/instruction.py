@@ -7,11 +7,12 @@ class Instruction(object):
         self.disasm = disasm
         self.bytes = bytes
         self.trace = None
-    
+
     def __str__(self):
-        return '%#x\t%s\t%s' % (self.addr, 
-            self.bytes.encode('hex').upper(),
-            self.disasm)
+        # return '%#x\t%s\t%s' % (self.addr, 
+        #     self.bytes.encode('hex').upper(),
+        #     self.disasm)
+        return '%#x\t%s' % (self.addr, self.disasm)
 
     @property
     def size(self):

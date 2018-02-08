@@ -221,7 +221,7 @@ def state_to_c(sb):
     other = []
     for expr, value in out:
         c2 = TranslatorC2()
-        # print 'before: \n%s = %s\n' % (expr, value)
+        print 'before: \n%s = %s\n' % (expr, value)
         expr_c = c2.from_expr(expr)
         value_c = c2.from_expr(value)
         # print 'after: \n%s = %s\n' % (expr_c, value_c)

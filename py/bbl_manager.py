@@ -8,8 +8,6 @@ import sys
 
 from functools import wraps
 
-# my code
-import symexec 
 
 # so @profile won't throw error when running without line_profiler.
 if 'profile' not in  dir(__builtins__):
@@ -83,10 +81,11 @@ class BasicBlock(object):
 
     @property
     def size(self):
+        self_size = sum(i.size for i in self._instructions)
         if not self.consolidated:
-            return sum(i.size for i in self._instructions)
+            return self_size
         else:
-            return self.size + sum(i.size for i in self.sub_blocks)
+            return self_size + sum(i.size for i in self.sub_blocks)
 
     @property
     def instructions(self):
@@ -386,9 +385,11 @@ class BBLManager(object):
 
         loops   = []
 
+        count = 0
 
         for addrs in self._buffer_process_addr(filename, start_addr, end_addr, x64):
             for addr in addrs:
+                count += 1
 
                 # Construct graph.
                 if not self.head_addr:
@@ -424,6 +425,9 @@ class BBLManager(object):
         for addr in self.blocks.keys():
             if self.blocks[addr].exec_count == 0:
                 self.blocks.pop(addr)
+
+        print '[+] %s instructions processed.' % count
+
 
     # ==============================================================================
     # Use DFS algrithm to search graph to find circles staticly, but we got a lot more senseless results.
@@ -547,18 +551,23 @@ class BBLManager(object):
             if node.exec_count == 0: continue
 
             g.add_node(pydot.Node(node.start_addr, 
-                label= '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count) 
-                #label = node.ins_str().replace('\n','\l')  # make text left-aligned.
+                label = ''
+                # label= '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count) 
+                # label = node.ins_str.replace('\n','\l')  # make text left-aligned.
                 #label = str(node).replace('\n','\l')
                 ))
             for next_addr in node.nexts:
-                g.add_edge(pydot.Edge(node.start_addr, next_addr, label = str(node.nexts[next_addr])))
+                g.add_edge(pydot.Edge(node.start_addr, next_addr , label = ''))#str(node.nexts[next_addr])))
 
         
         import os
         g.write_jpg("test.jpg")
         os.system('test.jpg')
-        #g.write_svg("test.svg")
+
+        g.write_dot("test.dot")
+        os.system('dot -Temf test.dot -o test.emf')
+
+        # g.write_svg("test.svg")
         #os.system('"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" test.svg')
 
 
@@ -580,11 +589,11 @@ class BBLManager(object):
             def OnRefresh(self):
                 print 'OnRefresh'
                 self.Clear()
-                self._nodes = bm.blocks.values()
+                self._nodes = self.bm.blocks.values()
 
                 for node in self._nodes:
                     for next_addr in node.nexts:
-                        g.AddEdge(self._nodes.index(node), self._nodes.index(bm.blocks[next_addr])) 
+                        self.AddEdge(self._nodes.index(node), self._nodes.index(self.bm.blocks[next_addr])) 
 
                 return True
 
@@ -655,29 +664,27 @@ class BBLManager(object):
 
                 # set.union(*[set(lp.addr_seq[:loop_length]) for lp in block.loops])
                 # this graph looks better.
-                for lp in block.loops:
+                for lp in bm.loops:
                     for addr in lp.addr_seq[:loop_length]:
                         if addr not in block_set:
                             block_set.append(addr)
-
-
 
                 self._nodes = [bm.blocks[addr] for addr in block_set]
 
                 for node in self._nodes:
                     for next_addr in node.nexts:
                         if next_addr in block_set:
-                            g.AddEdge(self._nodes.index(node), self._nodes.index(bm.blocks[next_addr])) 
+                            self.AddEdge(self._nodes.index(node), self._nodes.index(bm.blocks[next_addr])) 
 
                 return True
 
             def OnGetText(self, node_id):
-                node = self[node_id]
-                #if self.Count() < 100:
-                #   return '%#x(%d) %d\n%s'%(node.start_addr, node.ins_count, node.exec_count, node.ins_str())
-                #else:
-                #   return '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count)
-                return str(self[node_id])
+                node = self._nodes[node_id]
+                if self.Count() < 100:
+                  return '%#x(%d) %d\n%s'%(node.start_addr, node.ins_count, node.exec_count, node.ins_str())
+                else:
+                  return '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count)
+                return str(self._nodes[node_id])
 
         g = MyGraph(self)
         g.Show()
@@ -764,15 +771,16 @@ if __name__ == '__main__':
     #     bm.draw_block_loop_ida(dispatcher)
     global bm
     bm = BBLManager()
-    bm.load_ins_info('../bin.ins')
-    bm.load_trace('../bin.trace') 
+    bm.load_ins_info(r'D:\paper\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.ins')
+    bm.load_trace(r'D:\paper\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.trace', start_addr=0x401000, end_addr =0x4012b0  ) 
     # bm.load_trace('../bin.block')      
     bm.consolidate_blocks()
     # cPickle.dump(bm, open('test.dump','wb')) 
-    # bm.display_bbl_graph()
+    bm.display_bbl_graph()
+    # bm.display_bbl_graph_ida()
 
-    bm.detect_dispatchers() 
-    bm.dump_handlers()
+    # bm.detect_dispatchers() 
+    # bm.dump_handlers()
 
 
     
