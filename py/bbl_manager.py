@@ -9,6 +9,12 @@ import sys
 from functools import wraps
 
 
+import instruction
+import trace
+
+from block import BasicBlock, BlockLoop
+
+
 # so @profile won't throw error when running without line_profiler.
 if 'profile' not in  dir(__builtins__):
     profile = lambda func: func
@@ -24,211 +30,10 @@ def time_profile(orig_func):
     return wrap_func
 
 
-class BasicBlock(object):
-
-    def __init__(self, instructions=None):
-        # instructions sequence. (instruction.Instruction)
-        if instructions:
-            self._instructions = instructions
-        else:
-            self._instructions = []
-
-        self.loops = set()
-
-        self.visited = False # for DFS.
-
-        # times of execution.
-        self.exec_count = 0
-
-        # next, prev block address.  (addr, call_count)
-        # use address instead of reference, or cPickle.dump throw a recursion error.
-        self._nexts = {}
-        self._prevs = {}
-
-        # Self.consolidated is True when sub_blocks is not empty
-        self.sub_blocks = []
-
-    @property
-    def consolidated(self):
-        return self.sub_blocks
-
-    @property
-    def start_addr(self):
-        return self._instructions[0].addr
-
-    @property
-    def addr(self):
-        return self.start_addr
-
-    @property
-    def nexts(self):
-        if not self.consolidated:
-            return self._nexts
-        else:
-            return self.sub_blocks[-1].nexts
-
-    @property
-    def prevs(self):
-        return self._prevs
-
-
-    @property
-    def end_addr(self):
-        if not self.consolidated:
-            return self._instructions[-1].addr
-        else:
-            return self.sub_blocks[-1].end_addr
-
-    @property
-    def size(self):
-        self_size = sum(i.size for i in self._instructions)
-        if not self.consolidated:
-            return self_size
-        else:
-            return self_size + sum(i.size for i in self.sub_blocks)
-
-    @property
-    def instructions(self):
-        if not self.consolidated:
-            return self._instructions
-        else:
-            tmp_ins = list(self._instructions)
-            for b in self.sub_blocks:
-                tmp_ins += b._instructions
-            return tmp_ins
-
-    def add_ins(self, ins):
-        self._instructions.append(ins)
-
-    @property
-    def ins_addrs(self):
-        return [i.addr for i in self.instructions]
-
-    @property
-    def ins_count(self):
-        return len(self.instructions)
-
-    def add_prev(self, addr):
-        #if addr not in self.prevs:
-        #   self.prevs[addr] = 1
-        #else:
-        #   self.prevs[addr] += 1
-        try:
-            self.prevs[addr] += 1
-        except KeyError:
-            self.prevs[addr] = 1
-
-
-    def add_next(self, addr):
-        # if addr not in self.nexts:
-        #     self.nexts[addr] = 1
-        # else:
-        #     self.nexts[addr] += 1
-        try:
-            self.nexts[addr] += 1
-        except KeyError:
-            self.nexts[addr] = 1
-
-    @property
-    def prev_count(self):
-        return len(self.prevs)
-
-    @property
-    def next_count(self):
-        return len(self.nexts)
-
-
-    def prev_blocks(self, bm):
-        return [bm.blocks[addr] for addr in self.prevs]
-
-    def next_blocks(self, bm):
-        return [bm.blocks[addr] for addr in self.nexts]
-
-    @property
-    def ins_str(self):
-        return '\n'.join(str(i) for i in self.instructions) # including sub-blocks.
-
-    @property
-    def bytes(self):
-        return ''.join(i.bytes for i in self.instructions)
-
-    def add_loop(self, loop):
-        self.loops.add(loop)
-
-    @property
-    def loop_count(self):
-        return len(self.loops)
-
-    def __str__(self):
-        buf = ''
-        buf += 'Block(%#x - %#x) SIZE(%d) INS(%d) EXEC(%d) LOOP(%d)\n' % (
-            self.start_addr, self.end_addr,
-            self.size, self.ins_count, self.exec_count, self.loop_count)
-        buf += 'Prev (%d):\n' % self.prev_count
-        buf += '\t'+','.join(hex(i) for i in self.prevs) + '\n'
-        buf += 'Next (%d):\n' % self.next_count
-        buf += '\t'+','.join(hex(i) for i in self.nexts) + '\n'
-        buf += 'Instructions:\n'
-        buf += ''.join('\t%s\n' % str(i) for i in self.instructions)
-        return buf
-
-    def __repr__(self):
-        return '<Block(%#x - %#x) INS(%d) PREV(%d) NEXT(%d) EXEC(%d) LOOP(%d)\n>' % (
-            self.start_addr, self.end_addr, self.ins_count,
-            self.prev_count, self.next_count, self.exec_count, self.loop_count)
-
-
-    def merge_block(self, block):
-        """
-        Merge sequential block, used in BBLManager.consolidate_blocks()
-        """
-        # note that block to merge may be consolidated, too.
-        self.sub_blocks.append(block)
-        self.sub_blocks += block.sub_blocks
-        block.sub_blocks = []
-
-    def to_c(self):
-        import symexec
-        sb = symexec.symexec(self.bytes)
-        c_str = symexec.state_to_c(sb)
-        return c_str
-
-class BlockLoop(object):
-
-    def __init__(self, addr_seq):
-        self.addr_seq = tuple(addr_seq)
-
-    def __cmp__(self, obj):
-        if isinstance(obj, self.__class__):
-            return cmp(self.addr_seq, obj.addr_seq)
-
-        if obj is self: return 0
-
-        if type(obj) is list or type(obj) is tuple:
-            return cmp(self.addr_seq, obj)
-
-        return cmp(self, obj)
-
-    def __hash__(self):
-        return hash(self.addr_seq)
-
-    def list_nodes(self, bm):
-        for addr in self.addr_seq:
-            yield bm.blocks[addr]
-
-    def __repr__(self):
-        buf = "loop: "
-        buf += ','.join(hex(i) for i in self.addr_seq[:5])
-        if len(self.addr_seq) > 5:
-            buf += '.. %d nodes' % len(self.addr_seq)
-        return buf
-
-    def __str__(self):
-        return '[ %s ]' % ', '.join(hex(i) for i in self.addr_seq)
-
 class BBLManager(object):
 
     def __init__(self):
+        self.instructions = {} # (addr, ins)
         self.blocks = {}  # (addr, block)
         self.loops = set()
         self.head_block = None  # first block in parse phrase
@@ -245,6 +50,12 @@ class BBLManager(object):
             self.loops.add(loop) # this will call loop.__hash__()
             return True
 
+    def add_ins(self, ins):
+        self.instructions[ins.addr] = ins
+
+    def get_ins(self, addr):
+        return self.instructions[addr]
+
     @time_profile
     def load_ins_info(self, filename):
         """
@@ -252,9 +63,11 @@ class BBLManager(object):
         """
         print '[+] Loading instructions info from %s' % filename
 
-        import instruction
-
         for ins in instruction.parse_file(filename):
+
+            self.add_ins(ins)
+
+            # Init block.
             b = BasicBlock()
             b.add_ins(ins)
             self.blocks[b.addr] = b
@@ -360,8 +173,25 @@ class BBLManager(object):
         f.close()
 
 
+    def _process_trace(self, filename, start_addr, end_addr, x64=False):
 
+        started = False
 
+        for t in trace.parse_file(filename):
+
+            # print t
+            if t.addr == start_addr:
+                started = True
+
+            if t.addr == end_addr:
+                break
+
+            if started:
+
+                ins = self.get_ins(t.addr)
+                ins.add_trace(t)
+
+                yield t.addr
 
     @time_profile
     @profile
@@ -386,39 +216,41 @@ class BBLManager(object):
 
         count = 0
 
-        for addrs in self._buffer_process_addr(filename, start_addr, end_addr, x64):
-            for addr in addrs:
-                count += 1
+        # for addrs in self._buffer_process_addr(filename, start_addr, end_addr, x64):
+        #     for addr in addrs:
 
-                # Construct graph.
-                if not self.head_addr:
-                    self.head_addr = addr
+        for addr in self._process_trace(filename, start_addr, end_addr, x64):
+            count += 1
 
-                cur_block = self.blocks[addr]
-                cur_block.exec_count += 1
-                if prev_block:
-                    cur_block.add_prev(prev_block.start_addr)
-                    prev_block.add_next(cur_block.start_addr)
-                prev_block = cur_block
+            # Construct graph.
+            if not self.head_addr:
+                self.head_addr = addr
 
-                # Finding loops.
-                if addr in addr_set: # set(using hash to search) is much faaaaaster than list.
-                    # loop found.
-                    loop_start = addr_seq.index(addr)
-                    loop = BlockLoop(addr_seq[loop_start: ])
+            cur_block = self.blocks[addr]
+            cur_block.exec_count += 1
+            if prev_block:
+                cur_block.add_prev(prev_block.start_addr)
+                prev_block.add_next(cur_block.start_addr)
+            prev_block = cur_block
 
-                    #loop = tuple(addr_seq[loop_start: ])
-                    addr_seq = addr_seq[ :loop_start]
-                    for i in loop.addr_seq:
-                        addr_set.remove(i)
+            # Finding loops.
+            if addr in addr_set: # set(using hash to search) is much faaaaaster than list.
+                # loop found.
+                loop_start = addr_seq.index(addr)
+                loop = BlockLoop(addr_seq[loop_start: ])
 
-                    if self._add_loop(loop):
-                        #for node in loop.list_nodes(self):
-                        #    node.add_loop(loop)
-                        self.blocks[addr].add_loop(loop) # head node.
+                #loop = tuple(addr_seq[loop_start: ])
+                addr_seq = addr_seq[ :loop_start]
+                for i in loop.addr_seq:
+                    addr_set.remove(i)
 
-                addr_seq.append(addr)
-                addr_set.add(addr)
+                if self._add_loop(loop):
+                    #for node in loop.list_nodes(self):
+                    #    node.add_loop(loop)
+                    self.blocks[addr].add_loop(loop) # head node.
+
+            addr_seq.append(addr)
+            addr_set.add(addr)
 
         # clear dead block whose exec_count is 0.
         for addr in self.blocks.keys():
@@ -541,7 +373,7 @@ class BBLManager(object):
     # ==============================================================================
 
 
-    def display_bbl_graph(self):
+    def display_bbl_graph(self, detail_level=0):
         """
         draw basic block graph with pydot.
         """
@@ -550,12 +382,16 @@ class BBLManager(object):
         for node in self.blocks.values():
             if node.exec_count == 0: continue
 
-            g.add_node(pydot.Node(node.start_addr, 
+            if detail_level == 0:
                 label = ''
-                # label= '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count) 
-                # label = node.ins_str.replace('\n','\l')  # make text left-aligned.
-                #label = str(node).replace('\n','\l')
-                ))
+            elif detail_level == 1:
+                label = '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count)
+                label += '\n' + node.ins_str + '\n'
+                label = label.replace('\n', '\l')  # make text left-aligned.
+            else:
+                label = str(node).replace('\n','\l')
+
+            g.add_node(pydot.Node(node.start_addr, label = label))
             for next_addr in node.nexts:
                 g.add_edge(pydot.Edge(node.start_addr, next_addr , label = ''))#str(node.nexts[next_addr])))
 
@@ -564,11 +400,14 @@ class BBLManager(object):
         g.write_jpg("test.jpg")
         os.system('test.jpg')
 
-        g.write_dot("test.dot")
-        os.system('dot -Temf test.dot -o test.emf')
+        # g.write_jpg("test.pdf")
+        # os.system('test.pdf')
+
+        # g.write_dot("test.dot")
+        # os.system('dot -Temf test.dot -o test.emf')
 
         # g.write_svg("test.svg")
-        #os.system('"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" test.svg')
+        # os.system('"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" test.svg')
 
 
     def display_bbl_graph_ida(self):
@@ -693,8 +532,9 @@ class BBLManager(object):
     def detect_dispatchers(self):
 
         # detect vmp 2.x loop, ugly code, but works.
-        dispatchers = filter(lambda b: b.loop_count > 5 and b.next_count*2 > b.loop_count,
-            self.sorted_blocks('loop_count'))
+        # dispatchers = filter(lambda b: b.loop_count > 5 and b.next_count*2 > b.loop_count,
+            # self.sorted_blocks('loop_count'))
+        dispatchers
 
         print '[+] %d dispatcher(s) found.' % len(dispatchers) 
         for block in dispatchers:
@@ -727,7 +567,7 @@ def dump_bm(infofile, tracefile, dumpfile, x64=False):
     global bm
     bm = BBLManager()
     bm.load_ins_info(infofile)
-    bm.load_trace(tracefile,x64=x64)    
+    bm.load_trace(tracefile,x64=x64)
     bm.consolidate_blocks()
     cPickle.dump(bm, open(dumpfile,'wb'))   
 
@@ -772,15 +612,17 @@ if __name__ == '__main__':
     global bm
     bm = BBLManager()
     bm.load_ins_info(r'D:\paper\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.ins')
-    bm.load_trace(r'D:\paper\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.trace', start_addr=0x401000, end_addr =0x4012b0  ) 
+    bm.load_trace(r'D:\paper\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.trace',
+        # start_addr=0x401000, end_addr=0x40127C) # allop
+        start_addr=0x401000, end_addr=0x00401169) # base64
     # bm.load_trace('../bin.block')      
     bm.consolidate_blocks()
     # cPickle.dump(bm, open('test.dump','wb')) 
-    # bm.display_bbl_graph()
+    bm.display_bbl_graph(0)
     # bm.display_bbl_graph_ida()
 
-    bm.detect_dispatchers() 
-    bm.dump_handlers()
+    # bm.detect_dispatchers() 
+    # bm.dump_handlers()
 
 
     

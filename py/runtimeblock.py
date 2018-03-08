@@ -58,10 +58,10 @@ class RuntimeBlock(object):
         if not self.has_addr(addr) or addr == self.addr:
             return None
             
-        addrs = [ins.addr for ins in self.instructions]
+        addrs = [ins.addr for ins in self._instructions]
         addr_idx = addrs.index(addr)
-        new_instructions = self.instructions[addr_idx:]
-        self.instructions = self.instructions[0:addr_idx]
+        new_instructions = self._instructions[addr_idx:]
+        self.instructions = self._instructions[0:addr_idx]
 
         new_block = RuntimeBlock(new_instructions)
 
