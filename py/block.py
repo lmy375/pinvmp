@@ -24,6 +24,7 @@ class BasicBlock(object):
         # Self.consolidated is True when sub_blocks is not empty
         self.sub_blocks = []
 
+
     @property
     def consolidated(self):
         return self.sub_blocks
@@ -149,7 +150,7 @@ class BasicBlock(object):
         return buf
 
     def __repr__(self):
-        return '<Block(%#x - %#x) INS(%d) PREV(%d) NEXT(%d) EXEC(%d) LOOP(%d)\n>' % (
+        return '<Block(%#x - %#x) INS(%d) PREV(%d) NEXT(%d) EXEC(%d) LOOP(%d)>' % (
             self.start_addr, self.end_addr, self.ins_count,
             self.prev_count, self.next_count, self.exec_count, self.loop_count)
 

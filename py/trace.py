@@ -32,6 +32,9 @@ class Trace(object):
         
         return buf
 
+    def __repr__(self):
+        return '<Trace [%d] %#x >' % (self.id, self.addr)
+
     def add_reg_read(self, reg_name, value):
         self.reg_read[reg_name] = value
 

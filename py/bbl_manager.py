@@ -11,6 +11,7 @@ from functools import wraps
 
 import instruction
 import trace
+import handler
 
 from block import BasicBlock, BlockLoop
 
@@ -40,7 +41,15 @@ class BBLManager(object):
         self.head_addr = None  # first address in execute phrase
 
         #=======
-        self.handlers = {}    # { dispatcher_addr : [handler_addr, ...]}
+        self.dispatcher = None  # We only support single dispatcher. TODO: multi-dispatchers.
+        self.handlers = {}    # {addr, Handler}
+
+
+    def add_handler(self, handler):
+        if handler.addr in self.handlers:
+            self.handlers[handler.addr].add_copy(handler)
+        else:
+            self.handlers[handler.addr] = handler
 
     def _add_loop(self, loop):
         # return True if a new loop is appended.
@@ -68,9 +77,9 @@ class BBLManager(object):
             self.add_ins(ins)
 
             # Init block.
-            b = BasicBlock()
-            b.add_ins(ins)
-            self.blocks[b.addr] = b
+            block = BasicBlock()
+            block.add_ins(ins)
+            self.blocks[block.addr] = block
 
 
         # blocks = open(filename, 'rb').read().split('####BBL\n')[1:] # skip first ''
@@ -90,7 +99,7 @@ class BBLManager(object):
         #     b = BasicBlock(start_addr, end_addr, size)
 
             if not self.head_block:
-                self.head_block = b
+                self.head_block = block
 
         #     # parse ins
         #     for line in lines[1:]:
@@ -373,18 +382,27 @@ class BBLManager(object):
     # ==============================================================================
 
 
-    def display_bbl_graph(self, detail_level=0):
+    def display_bbl_graph(self, level=1, g_format='jpg'):
         """
         draw basic block graph with pydot.
+        
+        level 0: blank
+        level 1: address
+        level 2: instructions
+        level 3: all
+
+        format: dot, jpg, svg, pdf
         """
         import pydot
         g = pydot.Dot(g_type='dig') # directed graph
         for node in self.blocks.values():
             if node.exec_count == 0: continue
 
-            if detail_level == 0:
+            if level == 0:
                 label = ''
-            elif detail_level == 1:
+            elif level == 1:
+                label = '%#x' % node.start_addr
+            elif level == 2:
                 label = '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count)
                 label += '\n' + node.ins_str + '\n'
                 label = label.replace('\n', '\l')  # make text left-aligned.
@@ -395,22 +413,29 @@ class BBLManager(object):
             for next_addr in node.nexts:
                 g.add_edge(pydot.Edge(node.start_addr, next_addr , label = ''))#str(node.nexts[next_addr])))
 
-        
-        import os
-        g.write_jpg("test.jpg")
-        os.system('test.jpg')
+        try:
+            import os
+            if g_format == 'jpg':
+                g.write_jpg("test.jpg")
+                os.system('test.jpg')
 
-        # g.write_jpg("test.pdf")
-        # os.system('test.pdf')
+            elif g_format == 'pdf':
+                g.write_jpg("test.pdf")
+                os.system('test.pdf')
 
-        # g.write_dot("test.dot")
-        # os.system('dot -Temf test.dot -o test.emf')
+            elif g_format == 'svg':
+                g.write_svg("test.svg")
+                os.system('"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" test.svg')
+            else: 
+                g.write_dot("test.dot")
+                os.system('dot -T%s test.dot -o test.%s') % (g_format, g_format)
+        except Exception, e:
+            print '[!] error in dot.exe: %s' % e
 
-        # g.write_svg("test.svg")
-        # os.system('"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" test.svg')
 
 
-    def display_bbl_graph_ida(self):
+
+    def display_bbl_graph_ida(self, level=1):
         """
         draw basic block graph with IDA pro. much faster!!!
         """
@@ -421,9 +446,11 @@ class BBLManager(object):
             return 
 
         class MyGraph(GraphViewer):
-            def __init__(self, bm):
+
+            def __init__(self, bm, level=1):
                 GraphViewer.__init__(self, 'BBL graph')
-                self.bm=bm
+                self.bm = bm
+                self.level = level
 
             def OnRefresh(self):
                 print 'OnRefresh'
@@ -438,11 +465,17 @@ class BBLManager(object):
 
             def OnGetText(self, node_id):
                 node = self[node_id]
-                #if self.Count() < 100:
-                #   return '%#x(%d) %d\n%s'%(node.start_addr, node.ins_count, node.exec_count, node.ins_str())
-                #else:
-                #   return '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count)
-                return str(self[node_id])
+                
+                
+                if self.level == 0:
+                    return ''
+                elif self.level == 1:
+                    return '%#x' % node.addr
+                elif self.level == 2:
+                    return '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count)
+                else:
+                    return '%#x(%d) %d\n%s'%(node.start_addr, node.ins_count, node.exec_count, node.ins_str())
+          
 
         g = MyGraph(self)
         g.Show()
@@ -497,7 +530,7 @@ class BBLManager(object):
                 self.bm=bm
 
             def OnRefresh(self):
-                print 'OnRefresh'
+                # print 'OnRefresh'
                 self.Clear()
                 block_set = [] 
 
@@ -529,37 +562,66 @@ class BBLManager(object):
         g.Show()
 
 
-    def detect_dispatchers(self):
+    def detect_handlers(self):
 
-        # detect vmp 2.x loop, ugly code, but works.
-        # dispatchers = filter(lambda b: b.loop_count > 5 and b.next_count*2 > b.loop_count,
-            # self.sorted_blocks('loop_count'))
-        dispatchers
+        dispatcher = self.sorted_blocks('loop_count')[0] # find the hottest block. 
 
-        print '[+] %d dispatcher(s) found.' % len(dispatchers) 
-        for block in dispatchers:
-            self.handlers[block.addr] = block.nexts
-        return dispatchers
+        print '[+] Dispatcher found at %#x.' % dispatcher.addr
+
+        for loop in dispatcher.loops:
+            loop_blocks = list(loop.list_nodes(bm))
+            assert loop_blocks[0] == dispatcher
+
+            h = handler.Handler()
+            for b in loop_blocks[1:]:
+                if not h.add_block(b):
+                    break  # if add failed, we stop.
+
+            if h.is_valid:
+                self.add_handler(h)
+
+        self.dispatcher = dispatcher
+
+        print '[+] %s handlers found.' % len(self.handlers)
+
 
     def dump_handlers(self):
 
-        for dispatcher_addr in self.handlers:
-            block = self.blocks[dispatcher_addr]
-            print 'Dispatcher:'
-            print block.ins_str
+        for addr in self.handlers:
+            print self.handlers[addr]
+            # block = self.blocks[dispatcher_addr]
+            # print 'Dispatcher:'
+            # print block.ins_str
 
-            handler_addrs = self.handlers[dispatcher_addr]
-            print '[+] %d Handler(s):' % len(handler_addrs)
-            for addr in handler_addrs:                
-                handler = self.blocks[addr]
-                print '#'*80
-                print 'Handler:'
-                # print bm.blocks[addr].bytes.encode('hex')
-                print handler.ins_str 
-                print 'C repr:'
-                print handler.to_c()      
+            # handler_addrs = self.handlers[dispatcher_addr]
+            # print '[+] %d Handler(s):' % len(handler_addrs)
+            # for addr in handler_addrs:                
+            #     handler = self.blocks[addr]
+            #     print '#'*80
+            #     print 'Handler:'
+            #     # print bm.blocks[addr].bytes.encode('hex')
+            #     print handler.ins_str 
+            #     print 'C repr:'
+            #     print handler.to_c()      
 
         print '='*20
+
+
+    def extract_handler_trace(self):
+
+        # Collect all trace.
+        traces = []
+        for handler in self.handlers.values():
+            block = handler.head
+            ins = block.instructions[0]
+            traces += ins.traces
+
+        # sorted by trace id.
+
+        traces.sort(lambda x,y: x.id - y.id)
+
+        return traces
+
 
 
 
@@ -611,18 +673,18 @@ if __name__ == '__main__':
     #     bm.draw_block_loop_ida(dispatcher)
     global bm
     bm = BBLManager()
-    bm.load_ins_info(r'D:\paper\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.ins')
-    bm.load_trace(r'D:\paper\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.trace',
+    bm.load_ins_info(r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.ins')
+    bm.load_trace(r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.trace',
         # start_addr=0x401000, end_addr=0x40127C) # allop
         start_addr=0x401000, end_addr=0x00401169) # base64
     # bm.load_trace('../bin.block')      
     bm.consolidate_blocks()
     # cPickle.dump(bm, open('test.dump','wb')) 
-    bm.display_bbl_graph(0)
+    bm.display_bbl_graph()
     # bm.display_bbl_graph_ida()
 
-    # bm.detect_dispatchers() 
-    # bm.dump_handlers()
+    bm.detect_handlers() 
+    bm.dump_handlers()
 
 
     

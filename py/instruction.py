@@ -14,6 +14,9 @@ class Instruction(object):
         #     self.disasm)
         return '%#x\t%s' % (self.addr, self.disasm)
 
+    def __repr__(self):
+        return '<INS %#x %s>' % (self.addr, self.disasm)
+
     @property
     def size(self):
         return len(self.bytes)
