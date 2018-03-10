@@ -211,8 +211,108 @@ def patch_shift_rotate():
         # return e, [IRBlock(lbl_src_null.name, [AssignBlock(e_src_null, instr)]),
                    # IRBlock(lbl_src_not_null.name, [AssignBlock(e_src_not_null, instr)])]
 
-    miasm2.arch.x86.sem.bsr_bsf = patch_bsr_bsf
+    # miasm2.arch.x86.sem.bsr_bsf = patch_bsr_bsf
 
+    def patch_div(ir, instr, src1):
+
+        # print '[*] Calling patched div.'
+
+        e = []
+        size = src1.size
+        if size == 8:
+            src2 = mRAX[instr.mode][:16]
+        elif size in [16, 32, 64]:
+            s1, s2 = mRDX[size], mRAX[size]
+            src2 = m2_expr.ExprCompose(s2, s1)
+        else:
+            raise ValueError('div arg not impl', src1)
+
+        c_d = m2_expr.ExprOp('udiv', src2, src1.zeroExtend(src2.size))
+        c_r = m2_expr.ExprOp('umod', src2, src1.zeroExtend(src2.size))
+
+        # if 8 bit div, only ax is affected
+        if size == 8:
+            e.append(m2_expr.ExprAff(src2, m2_expr.ExprCompose(c_d[:8], c_r[:8])))
+        else:
+            e.append(m2_expr.ExprAff(s1, c_r[:size]))
+            e.append(m2_expr.ExprAff(s2, c_d[:size]))
+
+        return e, []
+
+        # lbl_div = m2_expr.ExprId(ir.gen_label(), ir.IRDst.size)
+        # lbl_except = m2_expr.ExprId(ir.gen_label(), ir.IRDst.size)
+        # lbl_next = m2_expr.ExprId(ir.get_next_label(instr), ir.IRDst.size)
+
+        # do_div = []
+        # do_div += e
+        # do_div.append(m2_expr.ExprAff(ir.IRDst, lbl_next))
+        # blk_div = IRBlock(lbl_div.name, [AssignBlock(do_div, instr)])
+
+        # do_except = []
+        # do_except.append(m2_expr.ExprAff(exception_flags, m2_expr.ExprInt(
+        #     EXCEPT_DIV_BY_ZERO, exception_flags.size)))
+        # do_except.append(m2_expr.ExprAff(ir.IRDst, lbl_next))
+        # blk_except = IRBlock(lbl_except.name, [AssignBlock(do_except, instr)])
+
+        # e = []
+        # e.append(m2_expr.ExprAff(ir.IRDst,
+        #                          m2_expr.ExprCond(src1, lbl_div, lbl_except)))
+
+        # return e, [blk_div, blk_except]
+
+    miasm2.arch.x86.sem.div = patch_div
+    miasm2.arch.x86.sem.mnemo_func['div'] = patch_div
+
+
+    def patch_idiv(ir, instr, src1):
+        e = []
+        size = src1.size
+
+        if size == 8:
+            src2 = mRAX[instr.mode][:16]
+        elif size in [16, 32, 64]:
+            s1, s2 = mRDX[size], mRAX[size]
+            src2 = m2_expr.ExprCompose(s2, s1)
+        else:
+            raise ValueError('div arg not impl', src1)
+
+        c_d = m2_expr.ExprOp('idiv', src2, src1.signExtend(src2.size))
+        c_r = m2_expr.ExprOp('imod', src2, src1.signExtend(src2.size))
+
+        # if 8 bit div, only ax is affected
+        if size == 8:
+            e.append(m2_expr.ExprAff(src2, m2_expr.ExprCompose(c_d[:8], c_r[:8])))
+        else:
+            e.append(m2_expr.ExprAff(s1, c_r[:size]))
+            e.append(m2_expr.ExprAff(s2, c_d[:size]))
+
+        return e, []
+
+        # lbl_div = m2_expr.ExprId(ir.gen_label(), ir.IRDst.size)
+        # lbl_except = m2_expr.ExprId(ir.gen_label(), ir.IRDst.size)
+        # lbl_next = m2_expr.ExprId(ir.get_next_label(instr), ir.IRDst.size)
+
+        # do_div = []
+        # do_div += e
+        # do_div.append(m2_expr.ExprAff(ir.IRDst, lbl_next))
+        # blk_div = IRBlock(lbl_div.name, [AssignBlock(do_div, instr)])
+
+        # do_except = []
+        # do_except.append(m2_expr.ExprAff(exception_flags, m2_expr.ExprInt(
+        #     EXCEPT_DIV_BY_ZERO, exception_flags.size)))
+        # do_except.append(m2_expr.ExprAff(ir.IRDst, lbl_next))
+        # blk_except = IRBlock(lbl_except.name, [AssignBlock(do_except, instr)])
+
+        # e = []
+        # e.append(m2_expr.ExprAff(ir.IRDst,
+        #                          m2_expr.ExprCond(src1, lbl_div, lbl_except)))
+
+        # return e, [blk_div, blk_except]
+
+    miasm2.arch.x86.sem.idiv = patch_idiv    
+    miasm2.arch.x86.sem.mnemo_func['idiv'] = patch_idiv
+
+    # print '[*] Miasm patched.'
 
 patch_shift_rotate()
 
@@ -276,6 +376,12 @@ class TranslatorC2(Translator):
 
             elif expr.op == 'a>>':
                 return  "(%s) %s (%s)" %(self.from_expr(expr.args[0]),'>>',self.from_expr(expr.args[1]))
+
+            elif expr.op == 'umod' or expr.op == 'imod':
+                return  "(%s) %s (%s)" %(self.from_expr(expr.args[0]),'%',self.from_expr(expr.args[1]))
+
+            elif expr.op == 'udiv' or expr.op == 'idiv':
+                return  "(%s) %s (%s)" %(self.from_expr(expr.args[0]),'/',self.from_expr(expr.args[1]))
 
             elif expr.op == "segm":
                 # ignore seg register
@@ -361,7 +467,7 @@ def filter_cv(expr_value):
     return expr_value
 
 
-def state_to_c(sb, vm='vmp'):
+def state_to_expr(sb, vm='vmp', trans = False):
 
     sb.del_mem_above_stack(regs.ESP)
 
@@ -378,8 +484,13 @@ def state_to_c(sb, vm='vmp'):
     for expr, value in out:
 
         c2 = TranslatorC2()
-        expr_c = c2.from_expr(expr)
-        value_c = c2.from_expr(value)
+        if trans:
+            expr_c = c2.from_expr(expr)
+            value_c = c2.from_expr(value)
+        else:
+            expr_c = expr
+            value_c = value
+
         buf +=  '\t%s = %s;\n' % (expr_c, value_c)
 
     return buf
@@ -392,8 +503,8 @@ for expr in symbols_init:
         symbols_init[expr] = ExprInt(0, 1)
 
 
-def symexec(inst_bytes):
-
+def symexec(handler):
+    inst_bytes = handler.bytes_without_jmp
     machine = Machine("x86_32")
     cont = Container.from_string(inst_bytes)
     bs = cont.bin_stream
@@ -417,7 +528,7 @@ def symexec(inst_bytes):
 
         count += 1
         if count > 1000: 
-            print '[!] to many loop!'
+            print '[!] to many loop at %s' % handler.name
             break    
 
     return symb

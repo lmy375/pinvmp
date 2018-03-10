@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Report Template</title>
+	<meta charset="utf-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+	<link rel="stylesheet" type="text/css" href="semantic/semantic.min.css">
+	<link rel="stylesheet" type="text/css" href="css/common.css">
+
+	<script src="semantic/jquery.js"></script>
+	<script src="semantic/semantic.min.js"></script>
+	<script src="semantic/jquery.address.js"></script>
+
+	<script src="js/common.js"></script>
+</head>
+<body id="report" class="pushable">
+	<!-- sidebar begins -->
+	<div class="ui blue inverted vertical sidebar menu left">
+    <a class="item">
+      PE Infomation
+    </a>
+    <a class="item">
+      Hook Infomation
+    </a>  
+    <a class="item">
+      Statistics
+    </a>
+ 	</div>
+ 	<!-- sidebar ends -->
+ 	<!-- pusher begins -->
+	<div class="pusher">		
+	<!-- Menu begins-->		
+		<div class="ui fixed inverted blue menu">
+		  <div class="header item">
+			<div class="ui launch inverted  button ">
+		        <i class="sidebar icon"></i>
+		        Test.exe analysis report
+		 	</div>
+			</div>
+		  <div class="right menu">
+			<div class="ui mobile dropdown link item" tabindex="0">
+			  Menu
+			  <i class="dropdown icon"></i>
+			  <div class="menu" tabindex="-1">
+				<a class="item">item1</a>
+				<a class="item">item2</a>
+			  </div>
+			</div>
+			<div class="ui dropdown link item" tabindex="0">
+			  Courses
+			  <i class="dropdown icon"></i>
+			  <div class="menu transition hidden" tabindex="-1" style="">
+				<a class="item">Petting</a>
+				<a class="item">Feeding</a>
+				<a class="item">Mind Reading</a>
+			  </div>
+			</div>
+			<a class="item">other</a>
+		   </div>
+		</div>
+	<!-- Menu ends -->
+	<!-- Main begins -->
+		<div class="ui page">
+
+			<h2 class="ui dividing header">PE Infomation</h2>
+
+			<div style="min-height: 8rem;" class="ui segment">
+			  <a class="ui ribbon label">PE Infomation</a>
+			</div>
+			<div class="ui stacked segment">
+				<a class="ui ribbon label">PE Infomation</a>
+				<table class="ui celled striped table">
+					<thead>
+						<tr>
+							<th>
+								Segment Name
+							</th>
+							<th>
+								Segment size
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td>
+								.data
+							</td>
+							<td>
+								100
+							</td>
+						</tr>
+						<tr><td>.text</td><td>200</td> </tr>
+
+					</tbody>
+				</table>
+			</div>
+			
+
+
+			<h2 class="ui dividing header">Hook Function Infomation</h2>
+
+			<div class="ui styled accordion">
+			  <div class="title">
+			    <i class="dropdown icon"></i>
+			    Title
+			  </div>
+			  <div class="content">
+			    	<div class="ui divided list">
+			    		<div class="item"> arg1</div>
+			    		<div class="item"> arg2</div>
+			    	</div>
+			  </div>
+			</div>
+			<div class="ui styled accordion">
+			  <div class="title">
+			    <i class="dropdown icon"></i>
+			    Title2
+			  </div>
+			  <div class="content">
+			    	Content2
+			  </div>
+			</div>
+
+
+			<div id="test"></div>
+			<script type="text/javascript">
+				s = ""
+				for (var i = 0;i<500;i++) s+="Javascript\n"
+				//$("#test").html(s)
+			</script>
+		</div>
+		<!-- Main ends -->	
+	</div> 
+	<!-- pusher ends -->
+	
+</body>
+</html>

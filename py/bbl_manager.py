@@ -401,7 +401,7 @@ class BBLManager(object):
     # ==============================================================================
 
 
-    def display_bbl_graph(self, level=1, g_format='jpg'):
+    def display_bbl_graph(self, level=1, g_format='jpg', out_name='bbl'):
         """
         draw basic block graph with pydot.
         
@@ -422,7 +422,7 @@ class BBLManager(object):
             elif level == 1:
                 label = '%#x' % node.start_addr
             elif level == 2:
-                label = '%#x(%d) %d'%(node.start_addr, node.ins_count, node.exec_count)
+                label = '%#x(%d) exec(%d)'%(node.start_addr, node.ins_count, node.exec_count)
                 label += '\n' + node.ins_str + '\n'
                 label = label.replace('\n', '\l')  # make text left-aligned.
             else:
@@ -431,27 +431,28 @@ class BBLManager(object):
             g.add_node(pydot.Node(node.start_addr, label = label))
             for next_addr in node.nexts:
                 g.add_edge(pydot.Edge(node.start_addr, next_addr , label = ''))#str(node.nexts[next_addr])))
-
+        
         try:
             import os
+
+            path = config.IMAGE_FOLDER + out_name + '.' + g_format
+            
             if g_format == 'jpg':
-                g.write_jpg("test.jpg")
-                os.system('test.jpg')
+                g.write_jpg(path)
+                # os.system(path)
 
             elif g_format == 'pdf':
-                g.write_jpg("test.pdf")
-                os.system('test.pdf')
+                g.write_pdf(path)
+                # os.system(path)
 
             elif g_format == 'svg':
-                g.write_svg("test.svg")
-                os.system('%s test.svg' % config.BROWSER_PATH)
+                g.write_svg(path)
+                # os.system('%s %s' %(config.BROWSER_PATH, path)
             else: 
-                g.write_dot("test.dot")
-                os.system('dot -T%s test.dot -o test.%s') % (g_format, g_format)
+                g.write_dot(path + '.dot')
+                os.system('dot -T%s %s.dot -o %s') % (g_format, path, path)
         except Exception, e:
             print '[!] error in dot.exe: %s' % e
-
-
 
 
     def display_bbl_graph_ida(self, level=1):

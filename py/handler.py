@@ -1,5 +1,5 @@
 
-
+import config
 
 class Handler(object):
 
@@ -117,6 +117,17 @@ class Handler(object):
 
         return buf
 
+
+    @property
+    def ins_str_with_trace(self):
+        buf = ''
+        for ins in self.instructions: 
+            trace = ins.traces[0]
+            buf += str(ins) + '\t; ' + trace.change_str
+            buf += '\n'
+
+        return buf
+
     @property
     def ins_str_without_jmp(self):
         from miasm2.arch.x86.disasm import dis_x86_32
@@ -128,14 +139,19 @@ class Handler(object):
 
     def to_sym_state(self):
         import symexec
-        sb = symexec.symexec(self.bytes_without_jmp)
+        sb = symexec.symexec(self)
         return sb
 
 
-    def to_expr(self, vm='vmp'):
+    def to_expr(self):
         sb = self.to_sym_state()
         import symexec
-        c_str = symexec.state_to_c(sb, vm)
+        return symexec.state_to_expr(sb, config.VM, False)
+
+    def to_c(self):
+        sb = self.to_sym_state()
+        import symexec
+        c_str = symexec.state_to_expr(sb, config.VM, True)
         return c_str
 
 

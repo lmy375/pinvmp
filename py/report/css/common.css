@@ -1,0 +1,29 @@
+/*
+*{
+font-family: Consolas, "微软雅黑", "Liberation Mono", Menlo, Courier, monospace !important;
+}
+*/
+*{
+font-family: Consolas, "微软雅黑", "Liberation Mono", Menlo, Courier, monospace ;
+}
+
+#report .ui.left.sidebar {
+	overflow: visible;
+	width: 350px;
+}
+
+#report .ui.styled.accordion{
+	width: 100%;
+}
+
+#report .ui.page {
+	margin-left: 10%;
+	margin-right: 10%;
+	margin-top: 80px;
+	padding: auto;
+}
+
+.ui.toggle.checkbox label {
+	color: white;
+}
+

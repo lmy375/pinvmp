@@ -11,9 +11,9 @@ class Trace(object):
         self.reg_read = {} # reg, value
         self.reg_write = {}
 
-    def __str__(self):
-
-        buf = '[%d]\t%#x' % (self.id, self.addr)
+    @property
+    def change_str(self):
+        buf = ''
         for reg in self.reg_read:
             buf += '\t'
             buf += '%s->%#x' % (reg, self.reg_read[reg])
@@ -29,7 +29,11 @@ class Trace(object):
         for addr in self.mem_write:
             buf += '\t'
             buf += '[%#x]<-%#x' % (addr, self.mem_write[addr])
-        
+        return buf.strip('\t') # skip 1st '\t'
+
+    def __str__(self):
+        buf = '[%d]\t%#x\t' % (self.id, self.addr)
+        buf += self.change_str
         return buf
 
     def __repr__(self):
