@@ -18,7 +18,7 @@ from miasm2.ir.translators import Translator
 
 # patch shift
 
-def patch_shift():
+def patch_shift_rotate():
     import miasm2.expression.expression as m2_expr
     from miasm2.expression.simplifications import expr_simp
     from miasm2.arch.x86.arch import mn_x86, repeat_mn, replace_regs
@@ -88,12 +88,133 @@ def patch_shift():
         ]
         e_do += update_flag_znp(res)
 
-        return e_do, []
+        return (e_do, [])
 
-    import  miasm2.arch.x86.sem
     miasm2.arch.x86.sem._shift_tpl = patch_shift_tpl
 
-patch_shift()
+
+
+    def patch_rotate_tpl(ir, instr, dst, src, op, left=False):
+        '''Template to generate a rotater with operation @op
+        A temporary basic block is generated to handle 0-rotate
+        @op: operation to execute
+        @left (optional): indicates a left rotate if set, default is False
+        '''
+        # Compute results
+        shifter = get_shift(dst, src)
+        res = m2_expr.ExprOp(op, dst, shifter)
+
+        # CF is computed with 1-less round than `res`
+        new_cf = m2_expr.ExprOp(
+            op, dst, shifter - m2_expr.ExprInt(1, size=shifter.size))
+        new_cf = new_cf.msb() if left else new_cf[:1]
+
+        # OF is defined only for @b == 1
+        new_of = m2_expr.ExprCond(src - m2_expr.ExprInt(1, size=src.size),
+                                  m2_expr.ExprInt(0, size=of.size),
+                                  res.msb() ^ new_cf if left else (dst ^ res).msb())
+
+        # Build basic blocks
+        e_do = [m2_expr.ExprAff(cf, new_cf),
+                m2_expr.ExprAff(of, new_of),
+                m2_expr.ExprAff(dst, res)
+                ]
+        # Don't generate conditional shifter on constant
+        return (e_do, [])
+
+        # if isinstance(shifter, m2_expr.ExprInt):
+        #     if int(shifter) != 0:
+        #         return (e_do, [])
+        #     else:
+        #         return ([], [])
+        # e = []
+        # lbl_do = m2_expr.ExprId(ir.gen_label(), ir.IRDst.size)
+        # lbl_skip = m2_expr.ExprId(ir.get_next_label(instr), ir.IRDst.size)
+        # e_do.append(m2_expr.ExprAff(ir.IRDst, lbl_skip))
+        # e.append(m2_expr.ExprAff(
+        #     ir.IRDst, m2_expr.ExprCond(shifter, lbl_do, lbl_skip)))
+        # return (e, [IRBlock(lbl_do.name, [AssignBlock(e_do, instr)])])
+
+    miasm2.arch.x86.sem._rotate_tpl = patch_rotate_tpl
+
+    def patch_rotate_with_carry_tpl(ir, instr, op, dst, src):
+        # Compute results
+        shifter = get_shift(dst, src).zeroExtend(dst.size + 1)
+        result = m2_expr.ExprOp(op, m2_expr.ExprCompose(dst, cf), shifter)
+
+        new_cf = result[dst.size:dst.size +1]
+        new_dst = result[:dst.size]
+
+        result_trunc = result[:dst.size]
+        if op == '<<<':
+            of_value = result_trunc.msb() ^ new_cf
+        else:
+            of_value = (dst ^ result_trunc).msb()
+        # OF is defined only for @b == 1
+        new_of = m2_expr.ExprCond(src - m2_expr.ExprInt(1, size=src.size),
+                                  m2_expr.ExprInt(0, size=of.size),
+                                  of_value)
+
+
+        # Build basic blocks
+        e_do = [m2_expr.ExprAff(cf, new_cf),
+                m2_expr.ExprAff(of, new_of),
+                m2_expr.ExprAff(dst, new_dst)
+                ]
+
+        return (e_do, [])
+        # Don't generate conditional shifter on constant
+        # if isinstance(shifter, m2_expr.ExprInt):
+        #     if int(shifter) != 0:
+        #         return (e_do, [])
+        #     else:
+        #         return ([], [])
+        # e = []
+        # lbl_do = m2_expr.ExprId(ir.gen_label(), ir.IRDst.size)
+        # lbl_skip = m2_expr.ExprId(ir.get_next_label(instr), ir.IRDst.size)
+        # e_do.append(m2_expr.ExprAff(ir.IRDst, lbl_skip))
+        # e.append(m2_expr.ExprAff(
+        #     ir.IRDst, m2_expr.ExprCond(shifter, lbl_do, lbl_skip)))
+        # return (e, [IRBlock(lbl_do.name, [AssignBlock(e_do, instr)])])
+
+    miasm2.arch.x86.sem.rotate_with_carry_tpl = patch_rotate_with_carry_tpl
+
+
+    def patch_bsr_bsf(ir, instr, dst, src, op_name):
+        """
+        IF SRC == 0
+            ZF = 1
+            DEST is left unchanged
+        ELSE
+            ZF = 0
+            DEST = @op_name(SRC)
+        """
+        # lbl_src_null = m2_expr.ExprId(ir.gen_label(), ir.IRDst.size)
+        # lbl_src_not_null = m2_expr.ExprId(ir.gen_label(), ir.IRDst.size)
+        # lbl_next = m2_expr.ExprId(ir.get_next_label(instr), ir.IRDst.size)
+
+        # aff_dst = m2_expr.ExprAff(ir.IRDst, lbl_next)
+        # e = [m2_expr.ExprAff(ir.IRDst, m2_expr.ExprCond(src,
+        #                                                 lbl_src_not_null,
+        #                                                 lbl_src_null))]
+        # e_src_null = []
+        # e_src_null.append(m2_expr.ExprAff(zf, m2_expr.ExprInt(1, zf.size)))
+        # # XXX destination is undefined
+        # e_src_null.append(aff_dst)
+
+        # e_src_not_null = []
+        # e_src_not_null.append(m2_expr.ExprAff(zf, m2_expr.ExprInt(0, zf.size)))
+        # e_src_not_null.append(m2_expr.ExprAff(dst, m2_expr.ExprOp(op_name, src)))
+        # e_src_not_null.append(aff_dst)
+
+        return [], []
+        # return e, [IRBlock(lbl_src_null.name, [AssignBlock(e_src_null, instr)]),
+                   # IRBlock(lbl_src_not_null.name, [AssignBlock(e_src_not_null, instr)])]
+
+    miasm2.arch.x86.sem.bsr_bsf = patch_bsr_bsf
+
+
+patch_shift_rotate()
 
 
 #####################################
@@ -146,7 +267,16 @@ class TranslatorC2(Translator):
                 #     self.from_expr(expr.args[1]), size2mask(expr.args[1].size),
                 #     size2mask(expr.args[0].size))
                 return  "(%s) %s (%s)" %(self.from_expr(expr.args[0]),str(expr.op),self.from_expr(expr.args[1]))
-            
+
+            elif expr.op == '<<<': # TODO: <<< is << ?
+                return  "(%s) %s (%s)" %(self.from_expr(expr.args[0]),'<<',self.from_expr(expr.args[1]))
+
+            elif expr.op == '>>>': 
+                return  "(%s) %s (%s)" %(self.from_expr(expr.args[0]),'>>',self.from_expr(expr.args[1]))
+
+            elif expr.op == 'a>>':
+                return  "(%s) %s (%s)" %(self.from_expr(expr.args[0]),'>>',self.from_expr(expr.args[1]))
+
             elif expr.op == "segm":
                 # ignore seg register
                 return str(self.from_expr(expr.args[1]))
@@ -184,23 +314,9 @@ class TranslatorC2(Translator):
         out = ' | '.join(out)
         return '(' + out + ')'
 
-
-
-
-addition_infos = {}
-symbols_init = regs.regs_init.copy()
-for expr in symbols_init:
-    if expr.size == 1:  # set all flags 0
-        symbols_init[expr] = ExprInt(0,1)
-
-def state_to_c(sb):
-    """
-        Dump mem(ebp or global), reg(ebp, esi)
-    """
-
-    # print '-'*20, "State", '-'*20
-    out = {}
-    for expr, value in sorted(sb.symbols.items()):
+def filter_common(expr_value):
+    out = []
+    for expr, value in sorted(expr_value):
         if (expr, value) in symbols_init.items():
             continue
         if (expr, value) in addition_infos.items():
@@ -208,60 +324,101 @@ def state_to_c(sb):
         if expr in [regs.zf, regs.cf, regs.nf, regs.of, regs.pf, regs.af,
                     ExprId('IRDst', 32), regs.EIP]:
             continue
-        expr_s = expr_simp(expr.replace_expr(addition_infos))
-        expr = expr_s
+
+        expr = expr_simp(expr.replace_expr(addition_infos))
         value = expr_simp(value.replace_expr(addition_infos))
+        
         if expr == value:
             continue
-        out[expr] = value
 
-    out = sorted(out.iteritems())
-    x86_regs = []
-    mem = []
-    other = []
-    for expr, value in out:
-        c2 = TranslatorC2()
-        print 'before: \n%s = %s\n' % (expr, value)
-        expr_c = c2.from_expr(expr)
-        value_c = c2.from_expr(value)
-        # print 'after: \n%s = %s\n' % (expr_c, value_c)
+        out.append((expr, value))
 
-        if expr in [regs.EBP]:
-            x86_regs.append((expr_c, value_c))
+    return out
+
+def filter_vmp(expr_value):
+    """
+        Only care EBP, ESI, memory(base by EBP, EDI).
+    """
+    out = []
+    for expr, value in expr_value:
+
+        if expr in [regs.EBP, regs.ESI]:
+            out.append((expr, value))
+
         elif isinstance(expr, ExprMem):            
-            if regs.ESP in expr or regs.ESP_init in expr : continue  # skip ss:[esp] junk
-            mem.append((expr_c, value_c))
+            if regs.ESP in expr or regs.ESP_init in expr: 
+                continue  # skip ss:[esp] junk
+            out.append((expr, value))
+
         else:
-            other.append((expr_c, value_c))
+            #out.append((expr, value))
+            pass
+
+    return out
+
+def filter_cv(expr_value):
+
+    return expr_value
+
+
+def state_to_c(sb, vm='vmp'):
+
+    sb.del_mem_above_stack(regs.ESP)
+
+    out = filter_common(sb.symbols.items())
+
+    if vm == 'vmp':
+        out = filter_vmp(out)
+    elif vm == 'cv':
+        out = filter_cv(out)
+    else:
+        raise NotImplementedError('Unknown VM: %s' % vm)
 
     buf = ''
-    # print "Mem:"
-    for item in mem:
-        buf +=  '\t%s = %s;\n' % item
-    # print "Reg:"
-    for item in x86_regs:
-        buf +=  '\t%s = %s;\n' % item
-    # print
+    for expr, value in out:
+
+        c2 = TranslatorC2()
+        expr_c = c2.from_expr(expr)
+        value_c = c2.from_expr(value)
+        buf +=  '\t%s = %s;\n' % (expr_c, value_c)
+
     return buf
 
 
+addition_infos = {}
+symbols_init = regs.regs_init.copy()
+for expr in symbols_init:
+    if expr.size == 1:  # set all flags 0
+        symbols_init[expr] = ExprInt(0, 1)
+
+
 def symexec(inst_bytes):
+
     machine = Machine("x86_32")
     cont = Container.from_string(inst_bytes)
     bs = cont.bin_stream
     mdis = machine.dis_engine(bs, symbol_pool=cont.symbol_pool)
 
+    end_offset = len(inst_bytes)
 
-    asm_block = mdis.dis_bloc(0)
+    mdis.dont_dis = [end_offset]
+
+    asm_block = mdis.dis_block(0)
     # print asm_block
     ira = machine.ira(mdis.symbol_pool)
-    ira.add_bloc(asm_block)
+    ira.add_block(asm_block)
 
     symb = SymbolicExecutionEngine(ira, symbols_init)
 
     cur_addr = symb.emul_ir_block(0)
+    count = 0
+    while cur_addr != ExprInt(end_offset, 32): # execute to end
+        cur_addr = symb.emul_ir_block(cur_addr)
 
-    symb.del_mem_above_stack(regs.EBP)
+        count += 1
+        if count > 1000: 
+            print '[!] to many loop!'
+            break    
 
     return symb
 

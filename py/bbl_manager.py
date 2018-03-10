@@ -12,6 +12,8 @@ from functools import wraps
 import instruction
 import trace
 import handler
+import config
+import report
 
 from block import BasicBlock, BlockLoop
 
@@ -38,11 +40,21 @@ class BBLManager(object):
         self.blocks = {}  # (addr, block)
         self.loops = set()
         self.head_block = None  # first block in parse phrase
-        self.head_addr = None  # first address in execute phrase
+
+        self.traces = []
+
+        self.handler_traces = []
 
         #=======
         self.dispatcher = None  # We only support single dispatcher. TODO: multi-dispatchers.
         self.handlers = {}    # {addr, Handler}
+
+    def add_trace(self, trace):
+        self.traces.append(trace)
+
+    @property
+    def head_addr(self):
+        return self.head_block.addr
 
 
     def add_handler(self, handler):
@@ -82,6 +94,8 @@ class BBLManager(object):
             self.blocks[block.addr] = block
 
 
+        print '[+] %d instructions loaded.' % len(self.instructions)
+
         # blocks = open(filename, 'rb').read().split('####BBL\n')[1:] # skip first ''
         # for buf in blocks:
         #     lines = buf.splitlines()
@@ -98,8 +112,8 @@ class BBLManager(object):
 
         #     b = BasicBlock(start_addr, end_addr, size)
 
-            if not self.head_block:
-                self.head_block = block
+            # if not self.head_block:
+            #     self.head_block = block
 
         #     # parse ins
         #     for line in lines[1:]:
@@ -200,6 +214,8 @@ class BBLManager(object):
                 ins = self.get_ins(t.addr)
                 ins.add_trace(t)
 
+                self.add_trace(t)
+
                 yield t.addr
 
     @time_profile
@@ -231,11 +247,11 @@ class BBLManager(object):
         for addr in self._process_trace(filename, start_addr, end_addr, x64):
             count += 1
 
-            # Construct graph.
-            if not self.head_addr:
-                self.head_addr = addr
-
             cur_block = self.blocks[addr]
+
+            if not self.head_block:
+                self.head_block = cur_block
+
             cur_block.exec_count += 1
             if prev_block:
                 cur_block.add_prev(prev_block.start_addr)
@@ -266,7 +282,7 @@ class BBLManager(object):
             if self.blocks[addr].exec_count == 0:
                 self.blocks.pop(addr)
 
-        print '[+] %s instructions processed.' % count
+        print '[+] %s traces processed.' % count
 
 
     # ==============================================================================
@@ -366,17 +382,20 @@ class BBLManager(object):
         if current node has unique predecessor and the predecessor has unique successor, 
         consolidate current node with the predecessor. 
         """
-        print 'before consolidation: %d'%len(self.blocks)
+        print '[+] Constructing execution graph ...'
+        print ' - before consolidation: %d'%len(self.blocks)
 
         for addr in self.blocks.keys():
             node =  self.blocks[addr]
             if self._can_merge_to_prev(node):
                 self._merge_to_prev(node)
 
-        print 'after consolidation: %d'% len(set(self.blocks.values()))
+        print ' - after consolidation: %d'% len(set(self.blocks.values()))
 
         # Consolidate blocks of loops
         self._repair_loop()
+
+        print '[+] Execution graph constructed.'
 
 
     # ==============================================================================
@@ -425,7 +444,7 @@ class BBLManager(object):
 
             elif g_format == 'svg':
                 g.write_svg("test.svg")
-                os.system('"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" test.svg')
+                os.system('%s test.svg' % config.BROWSER_PATH)
             else: 
                 g.write_dot("test.dot")
                 os.system('dot -T%s test.dot -o test.%s') % (g_format, g_format)
@@ -607,7 +626,10 @@ class BBLManager(object):
         print '='*20
 
 
-    def extract_handler_trace(self):
+    def extract_handler_trace(self, force=False):
+
+        if not force and len(self.handler_traces) > 0:
+            return self.handler_traces
 
         # Collect all trace.
         traces = []
@@ -620,6 +642,7 @@ class BBLManager(object):
 
         traces.sort(lambda x,y: x.id - y.id)
 
+        self.handler_traces = traces;
         return traces
 
 
@@ -680,11 +703,26 @@ if __name__ == '__main__':
     # bm.load_trace('../bin.block')      
     bm.consolidate_blocks()
     # cPickle.dump(bm, open('test.dump','wb')) 
-    bm.display_bbl_graph()
+    # bm.display_bbl_graph()
     # bm.display_bbl_graph_ida()
 
     bm.detect_handlers() 
     bm.dump_handlers()
 
 
-    
+    report.gen_report(bm)
+    report.open_report()
+
+
+    # for h in bm.handlers.values():
+    #     print '*'*20
+    #     print h
+    #     print h.ins_str
+    #     print h.to_expr('cv')
+
+
+    # h = bm.handlers[0x405853]
+
+    # s = h.to_sym_state()
+
+    # s.emul_ir_block(0, True)

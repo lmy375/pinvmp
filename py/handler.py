@@ -1,4 +1,6 @@
 
+
+
 class Handler(object):
 
     DEFAULT_NAME = 'Handler'
@@ -52,6 +54,22 @@ class Handler(object):
         return self.head.addr
 
 
+    @property
+    def bytes(self):
+        return ''.join(b.bytes for b in self.blocks)
+
+    @property
+    def instructions(self):
+        ins = []
+        for b in self.blocks:
+            ins += b.instructions
+        return ins
+
+    @property
+    def ins_str(self):
+        return '\n'.join(b.ins_str for b in self.blocks)    
+
+
     def __str__(self):
         buf = self.name
         buf += '(%#x) %d blocks' % (self.addr, len(self.blocks))
@@ -63,4 +81,61 @@ class Handler(object):
 
         return buf
     
+
+    @property    
+    def bytes_without_jmp(self):
+        """
+        Clear all jump instructions.
+
+        jmp -> nop
+        jxx -> nop
+        call xxx -> push ret_addr
+        """
+
+        buf = ''
+
+        from miasm2.arch.x86.arch import mn_x86
+        from miasm2.arch.x86.arch import conditional_branch
+        from miasm2.arch.x86.arch import unconditional_branch
+        from miasm2.expression.expression import ExprInt
+
+        branch_name =  conditional_branch + unconditional_branch
+        call_name = ['CALL']
+
+        for ins in self.instructions:
+            ins_x86 =  mn_x86.dis(ins.bytes, 32)
+
+            if ins_x86.name in branch_name:
+                buf += '\x90'  #  NOP
+            elif ins_x86.name in call_name:
+                ret_addr = ExprInt(ins.addr + ins.size, 32)
+                ins_x86.args = [ret_addr]
+                ins_x86.name = 'PUSH'
+                buf += mn_x86.asm(ins_x86)[0]
+            else:
+                buf += ins.bytes
+
+        return buf
+
+    @property
+    def ins_str_without_jmp(self):
+        from miasm2.arch.x86.disasm import dis_x86_32
+        buf = self.bytes_without_jmp
+        d = dis_x86_32(buf)
+        d.dont_dis = [len(buf)]
+        return str(d.dis_block(0))
+
+
+    def to_sym_state(self):
+        import symexec
+        sb = symexec.symexec(self.bytes_without_jmp)
+        return sb
+
+
+    def to_expr(self, vm='vmp'):
+        sb = self.to_sym_state()
+        import symexec
+        c_str = symexec.state_to_c(sb, vm)
+        return c_str
+
 
