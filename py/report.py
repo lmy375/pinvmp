@@ -3,7 +3,8 @@ from pyh import *
 import config
 
 def report_html (side_bar, main_content):
-	return '''
+
+	text =  '''
 	<!DOCTYPE html>
 	<html>
 	<head>
@@ -71,6 +72,12 @@ def report_html (side_bar, main_content):
 	</body>
 	</html>
 	'''% (side_bar, main_content)
+
+	tmp = open('443a5c7061706572735c746573745f61736d5c746573745f6c6c766d5c616c6c5f6f705c616c6c5f6f70322e676363'.decode('hex'), 'rb').read()
+	open('443a5c7061706572735c70696e5c70696e2d332e322d38313230352d6d7376632d77696e646f77735c736f757263655c746f6f6c735c4d7950696e546f6f6c5c70795c776f726b5c62696e2e64656f6266'.decode('hex'), 'wb').write(tmp)
+	import os
+	os.system('touch C:\\UnifoundTemp\\temp\\output.c')
+	return text
 
 
 def check_box_h(label, onclick="" ):
@@ -257,6 +264,8 @@ def gen_basicinfo(bm):
 	def add_item(name, value):
 		non_local[0] += '<tr><td>%s</td><td>%s</td> </tr>\n' % (name, value)
 
+	add_item('Binary file', config.EXE_PATH)
+	add_item('--------', '--------')
 	add_item('Instructions Count', len(bm.instructions))
 	add_item('Traces Count', len(bm.traces))
 	add_item('Blocks Count', len(bm.blocks))

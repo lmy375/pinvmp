@@ -28,7 +28,7 @@ def time_profile(orig_func):
         time_start = time.time()
         result = orig_func(*args, **kwargs)
         time_end = time.time()
-        print 'Running %s(): %0.4f seconds' % (orig_func.func_name, time_end - time_start)
+        print '[*] Running %s(): %0.4f seconds' % (orig_func.func_name, time_end - time_start)
         return result
     return wrap_func
 
@@ -82,7 +82,7 @@ class BBLManager(object):
         """
         load instructions address, disassembly and binary bytes.
         """
-        print '[+] Loading instructions info from %s' % filename
+        print '[*] Loading instructions from %s' % filename
 
         for ins in instruction.parse_file(filename):
 
@@ -230,7 +230,7 @@ class BBLManager(object):
         x64: True for x64 , False for x86
         """
 
-        print '[+] Loading trace from %s' % filename
+        print '[*] Loading traces from %s' % filename
 
         prev_block = None
 
@@ -382,20 +382,20 @@ class BBLManager(object):
         if current node has unique predecessor and the predecessor has unique successor, 
         consolidate current node with the predecessor. 
         """
-        print '[+] Constructing execution graph ...'
-        print ' - before consolidation: %d'%len(self.blocks)
+        print '[*] Constructing execution graph ...'
+        print '[+] Before consolidation: %d'%len(self.blocks)
 
         for addr in self.blocks.keys():
             node =  self.blocks[addr]
             if self._can_merge_to_prev(node):
                 self._merge_to_prev(node)
 
-        print ' - after consolidation: %d'% len(set(self.blocks.values()))
+        print '[+] After consolidation: %d'% len(set(self.blocks.values()))
 
         # Consolidate blocks of loops
         self._repair_loop()
 
-        print '[+] Execution graph constructed.'
+        print '[*] Execution graph constructed.'
 
 
     # ==============================================================================
@@ -589,7 +589,7 @@ class BBLManager(object):
         print '[+] Dispatcher found at %#x.' % dispatcher.addr
 
         for loop in dispatcher.loops:
-            loop_blocks = list(loop.list_nodes(bm))
+            loop_blocks = list(loop.list_nodes(self))
             assert loop_blocks[0] == dispatcher
 
             h = handler.Handler()

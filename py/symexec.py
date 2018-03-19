@@ -474,6 +474,7 @@ def state_to_expr(sb, vm='vmp', trans = False):
     out = filter_common(sb.symbols.items())
 
     if vm == 'vmp':
+        sb.del_mem_above_stack(regs.EBP)
         out = filter_vmp(out)
     elif vm == 'cv':
         out = filter_cv(out)
