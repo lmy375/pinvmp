@@ -44,7 +44,7 @@ def main():
     report.gen_report(bm)  
     print '[*] Report generated.'
 
-    report.open_report()
+    # report.open_report()
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ EXE_PATH = r"C:\Users\Moon\Desktop\VMP\vmp3.09\test.vmp.exe"
 # EXE_PATH = "D:\\papers\\pin\\pin-3.2-81205-msvc-windows\source\\tools\\MyPinTool\\py\\work\\bin_op.vmp_2.exe"
 START_ADDR = 0x401000
 END_ADDR = 0x040101A #0x0401169 #0x40127C
-VM = 'vmp' 
+VM = 'vmp3'  # vmp/cv/vmp3
 
 # File Path
 PIN_PATH = 'D:\\papers\\pin\\pin-3.2-81205-msvc-windows\\pin.exe'

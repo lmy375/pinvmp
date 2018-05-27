@@ -401,7 +401,7 @@ class BBLManager(object):
     # ==============================================================================
 
 
-    def display_bbl_graph(self, level=1, g_format='jpg', out_name='bbl'):
+    def gen_bbl_graph(self, level=1, g_format='jpg', out_name='bbl', display=False):
         """
         draw basic block graph with pydot.
         
@@ -439,20 +439,23 @@ class BBLManager(object):
             
             if g_format == 'jpg':
                 g.write_jpg(path)
-                # os.system(path)
+                if display: os.system(path)
 
             elif g_format == 'pdf':
                 g.write_pdf(path)
-                # os.system(path)
+                if display: os.system(path)
 
             elif g_format == 'svg':
                 g.write_svg(path)
-                # os.system('%s %s' %(config.BROWSER_PATH, path)
+                if display: os.system('%s %s' %(config.BROWSER_PATH, path))
             else: 
                 g.write_dot(path + '.dot')
                 os.system('dot -T%s %s.dot -o %s') % (g_format, path, path)
         except Exception, e:
             print '[!] error in dot.exe: %s' % e
+
+    def display_bbl_graph(self, level=1, g_format='jpg', out_name='bbl'):
+        self.gen_bbl_graph(level, g_format, out_name, True)
 
 
     def display_bbl_graph_ida(self, level=1):
@@ -584,26 +587,60 @@ class BBLManager(object):
 
     def detect_handlers(self):
 
-        dispatcher = self.sorted_blocks('loop_count')[0] # find the hottest block. 
+        if config.VM == 'vmp' or config.VM == 'cv':
+            
+            dispatcher = self.sorted_blocks('loop_count')[0] # find the hottest block. 
 
-        print '[+] Dispatcher found at %#x.' % dispatcher.addr
+            print '[+] Dispatcher found at %#x.' % dispatcher.addr
 
-        for loop in dispatcher.loops:
-            loop_blocks = list(loop.list_nodes(self))
-            assert loop_blocks[0] == dispatcher
+            for loop in dispatcher.loops:
+                loop_blocks = list(loop.list_nodes(self))
+                assert loop_blocks[0] == dispatcher
 
-            h = handler.Handler()
-            for b in loop_blocks[1:]:
-                if not h.add_block(b):
-                    break  # if add failed, we stop.
+                h = handler.Handler()
+                for b in loop_blocks[1:]:
+                    if not h.add_block(b):
+                        break  # if add failed, we stop.
 
-            if h.is_valid:
-                self.add_handler(h)
+                if h.is_valid:
+                    self.add_handler(h)
 
-        self.dispatcher = dispatcher
+            self.dispatcher = dispatcher            
 
-        print '[+] %s handlers found.' % len(self.handlers)
+        elif config.VM == 'vmp3':
+            
+            jmp_edi_blocks = []
+            
+            for addr in self.blocks:
+                b = self.blocks[addr]
+                if b.ends_with_jmp_edi and b.ins_count < 10: # short block
+                    jmp_edi_blocks.append(addr)
 
+            for addr in self.blocks:
+                if addr in jmp_edi_blocks:
+                    continue
+
+                b = self.blocks[addr]
+
+                if b.ends_with_jmp_edi:  # block ends with "jmp edi" patten
+                    h = handler.Handler()
+                    h.add_block(b)
+                    self.add_handler(h)
+                else:                    # block jump to `jmp_edi_block`
+                    if len(b.nexts) != 1:
+                        continue
+                    next_addr = b.nexts.keys()[0]
+                    if next_addr in jmp_edi_blocks:
+                        next_b = self.blocks[next_addr]
+                        h = handler.Handler()
+                        h.add_block(b)
+                        h.add_block(next_b)
+                        self.add_handler(h)                       
+
+        else:
+            raise NotImplementedError('unsupported VM type %s' % config.VM)
+
+        print '[+] %s %s-handlers found.' % (len(self.handlers), config.VM)
 
     def dump_handlers(self):
 

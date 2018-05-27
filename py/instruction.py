@@ -32,9 +32,6 @@ class Instruction(object):
         else:
             print self.traces[i]
 
-
-
-
 def parse_file(filepath):
     for line in open(filepath, 'rb').read().splitlines():
         addr, diasm, hexbytes = line.split('\t')

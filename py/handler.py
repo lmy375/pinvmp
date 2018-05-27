@@ -1,7 +1,9 @@
 
 import config
 
-class Handler(object):
+from symexec import SymExecObject
+
+class Handler(SymExecObject):
 
     DEFAULT_NAME = 'Handler'
 
@@ -31,10 +33,6 @@ class Handler(object):
         if self.tail:
             if block.addr not in self.tail.nexts:
                 return False
-
-        # every block.exec_count must <= head.exec_count 
-        if block.exec_count > self.head.exec_count:
-            return False
 
         self.blocks.append(block)
         self.tail = block
@@ -82,76 +80,5 @@ class Handler(object):
         return buf
     
 
-    @property    
-    def bytes_without_jmp(self):
-        """
-        Clear all jump instructions.
-
-        jmp -> nop
-        jxx -> nop
-        call xxx -> push ret_addr
-        """
-
-        buf = ''
-
-        from miasm2.arch.x86.arch import mn_x86
-        from miasm2.arch.x86.arch import conditional_branch
-        from miasm2.arch.x86.arch import unconditional_branch
-        from miasm2.expression.expression import ExprInt
-
-        branch_name =  conditional_branch + unconditional_branch
-        call_name = ['CALL']
-
-        for ins in self.instructions:
-            ins_x86 =  mn_x86.dis(ins.bytes, 32)
-
-            if ins_x86.name in branch_name:
-                buf += '\x90'  #  NOP
-            elif ins_x86.name in call_name:
-                ret_addr = ExprInt(ins.addr + ins.size, 32)
-                ins_x86.args = [ret_addr]
-                ins_x86.name = 'PUSH'
-                buf += mn_x86.asm(ins_x86)[0]
-            else:
-                buf += ins.bytes
-
-        return buf
-
-
-    @property
-    def ins_str_with_trace(self):
-        buf = ''
-        for ins in self.instructions: 
-            trace = ins.traces[0]
-            buf += str(ins) + '\t; ' + trace.change_str
-            buf += '\n'
-
-        return buf
-
-    @property
-    def ins_str_without_jmp(self):
-        from miasm2.arch.x86.disasm import dis_x86_32
-        buf = self.bytes_without_jmp
-        d = dis_x86_32(buf)
-        d.dont_dis = [len(buf)]
-        return str(d.dis_block(0))
-
-
-    def to_sym_state(self):
-        import symexec
-        sb = symexec.symexec(self)
-        return sb
-
-
-    def to_expr(self):
-        sb = self.to_sym_state()
-        import symexec
-        return symexec.state_to_expr(sb, config.VM, False)
-
-    def to_c(self):
-        sb = self.to_sym_state()
-        import symexec
-        c_str = symexec.state_to_expr(sb, config.VM, True)
-        return c_str
 
 

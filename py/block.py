@@ -1,6 +1,6 @@
+from symexec import SymExecObject
 
-
-class BasicBlock(object):
+class BasicBlock(SymExecObject):
 
     def __init__(self, instructions=None):
         # instructions sequence. (instruction.Instruction)
@@ -164,11 +164,18 @@ class BasicBlock(object):
         self.sub_blocks += block.sub_blocks
         block.sub_blocks = []
 
-    def to_c(self):
-        import symexec
-        sb = symexec.symexec(self.bytes)
-        c_str = symexec.state_to_c(sb)
-        return c_str
+    @property
+    def name(self):
+        return 'Block(%#x)' % self.addr
+
+    @property
+    def ends_with_jmp_edi(self):
+        if self.instructions[-1].bytes == '\xFF\xE7': # jmp edi
+            return True
+        if self.instructions[-1].bytes == '\xC3' and  self.instructions[-2].bytes == '\x57': # push edi; retn
+            return True 
+        return False
+
 
 class BlockLoop(object):
 

@@ -271,7 +271,9 @@ def gen_basicinfo(bm):
 	add_item('Handler Traces Count', len(bm.extract_handler_trace()))
 	add_item('--------', '--------')
 	add_item('Start address', '%#x' % bm.head_addr)
-	add_item('Dispatcher address', '%#x' % bm.dispatcher.addr)
+
+	if config.VM in ['vmp', 'cv']:
+		add_item('Dispatcher address', '%#x' % bm.dispatcher.addr)
 
 	text += table_fmt % ('Basic Information', non_local[0])
 
@@ -528,10 +530,12 @@ def gen_overview(bm):
 
 
 def gen_graph(bm):
+	
+	bm.gen_bbl_graph(1, 'jpg', 'bbl')
 
-	bm.display_bbl_graph(0, 'svg', 'level1')
-	bm.display_bbl_graph(1, 'svg', 'level2')
-	bm.display_bbl_graph(2, 'svg', 'level3')
+	bm.gen_bbl_graph(0, 'svg', 'level1')
+	bm.gen_bbl_graph(1, 'svg', 'level2')
+	bm.gen_bbl_graph(2, 'svg', 'level3')
 	text = ''
 	fmt = '''
 		<div class="ui stacked segment">
