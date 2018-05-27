@@ -14,7 +14,7 @@ def main():
     print '[*] Running PinTool ...'
     print '#'*80
 
-    # os.system(config.PIN_CMD)
+    os.system(config.PIN_CMD)
 
     print '#'*80
 
@@ -41,10 +41,10 @@ def main():
 
     print '----- STEP 6 -----'
     print '[*] Generating report ....'
-    # report.gen_report(bm)  
+    report.gen_report(bm)  
     print '[*] Report generated.'
 
-    # report.open_report()
+    report.open_report()
 
 
 if __name__ == '__main__':
@@ -53,20 +53,16 @@ if __name__ == '__main__':
     # except Exception, e:
     #     print '[!] Fatal Error %s' % e
     
-
-
-
-
     # global bm
-    # bm = BBLManager()
+    # bm =  bbl_manager.BBLManager()
     # bm.load_ins_info(r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.ins')
     # bm.load_trace(r'D:\papers\pin\pin-3.2-81205-msvc-windows\source\tools\MyPinTool\bin.trace',
     #     # start_addr=0x401000, end_addr=0x40127C) # allop
-    #     start_addr=0x401000, end_addr=0x00401169) # base64
+    #     start_addr=0x401000, end_addr=0x0040101A ) # base64
     # # bm.load_trace('../bin.block')      
     # bm.consolidate_blocks()
     # # cPickle.dump(bm, open('test.dump','wb')) 
-    # # bm.display_bbl_graph()
+    # bm.display_bbl_graph()
     # # bm.display_bbl_graph_ida()
 
     # bm.detect_handlers() 

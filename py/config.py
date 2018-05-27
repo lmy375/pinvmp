@@ -1,4 +1,5 @@
-EXE_PATH = "C:\\Users\\Moon\\Desktop\\vmp1.81\\test.vmp_2.13.8_pro.exe"
+EXE_PATH = r"C:\Users\Moon\Desktop\VMP\vmp3.09\test.vmp.exe"
+# EXE_PATH = "C:\\Users\\Moon\\Desktop\\vmp1.81\\test.vmp_2.13.8_pro.exe"
 # EXE_PATH = "C:\\Users\\Moon\\Desktop\\vmp1.81\\test.vmp_1.81_demo.exe"
 # EXE_PATH = "D:\\papers\\test_asm\\test_pin\\base64_vmp\\base64.vmp_2.13.8.exe"
 # EXE_PATH = "D:\\papers\\pin\\pin-3.2-81205-msvc-windows\source\\tools\\MyPinTool\\py\\work\\bin_op.vmp_2.exe"
